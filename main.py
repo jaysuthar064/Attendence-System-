@@ -1,24 +1,102 @@
+import os
+import sqlite3
+import threading
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
-import sqlite3
-import subprocess
 
-from register_student import (
-    register_student
+from capture_faces import capture_faces
+from mark_attendence import init_attendance_database
+from mark_attendence import recognize_faces
+from register_student import register_student
+from train_model import train_model as train_face_model
+
+
+BASE_DIR = os.path.dirname(
+    os.path.abspath(__file__)
 )
 
-from capture_faces import (
-    capture_faces
+DATABASE_FILE = os.path.join(
+    BASE_DIR,
+    "database",
+    "attendance.db"
 )
 
 
-# ----------------------------
-# Register Student Window
-# ----------------------------
+def run_in_background(
+    task,
+    success_message=None,
+    after_success=None
+):
+    set_status(
+        "Working..."
+    )
+
+    def worker():
+        try:
+            task()
+
+        except Exception as error:
+            root.after(
+                0,
+                lambda: show_error(error)
+            )
+            return
+
+        root.after(
+            0,
+            lambda: task_finished(
+                success_message,
+                after_success
+            )
+        )
+
+    threading.Thread(
+        target=worker,
+        daemon=True
+    ).start()
+
+
+def task_finished(
+    success_message,
+    after_success
+):
+    set_status(
+        "Ready"
+    )
+
+    if success_message:
+        messagebox.showinfo(
+            "Success",
+            success_message
+        )
+
+    if after_success:
+        after_success()
+
+
+def show_error(
+    error
+):
+    set_status(
+        "Error"
+    )
+
+    messagebox.showerror(
+        "Error",
+        str(error)
+    )
+
+
+def set_status(
+    text
+):
+    status_var.set(
+        text
+    )
+
 
 def open_register_window():
-
     register_window = tk.Toplevel(
         root
     )
@@ -28,7 +106,7 @@ def open_register_window():
     )
 
     register_window.geometry(
-        "400x250"
+        "420x330"
     )
 
     register_window.resizable(
@@ -52,6 +130,24 @@ def open_register_window():
 
     tk.Label(
         register_window,
+        text="Student ID",
+        font=("Arial", 12)
+    ).pack(
+        pady=5
+    )
+
+    student_id_entry = tk.Entry(
+        register_window,
+        width=30,
+        font=("Arial", 12)
+    )
+
+    student_id_entry.pack(
+        pady=5
+    )
+
+    tk.Label(
+        register_window,
         text="Student Name",
         font=("Arial", 12)
     ).pack(
@@ -68,11 +164,12 @@ def open_register_window():
         pady=5
     )
 
-    # ----------------------------
-    # Save Student
-    # ----------------------------
-
     def save_student():
+        student_id = (
+            student_id_entry
+            .get()
+            .strip()
+        )
 
         student_name = (
             student_name_entry
@@ -80,88 +177,38 @@ def open_register_window():
             .strip()
         )
 
-        if not student_name:
-
+        if (
+            not student_id
+            or not student_name
+        ):
             messagebox.showerror(
                 "Error",
-                "Student name is required!"
+                "Student ID and name are required."
             )
-
             return
 
-        try:
+        register_window.destroy()
 
-            student_id, _ = (
-                register_student(
-                    student_name
-                )
+        def task():
+            register_student(
+                student_id,
+                student_name
             )
-
-            messagebox.showinfo(
-                "Info",
-                (
-                    f"Student Registered\n\n"
-                    f"ID: {student_id}\n"
-                    f"Name: {student_name}\n\n"
-                    f"Starting face capture..."
-                )
-            )
-
-            # # Auto Face Capture
-            # capture_faces(
-            #     student_id,
-            #     student_name
-            # )
-
-            # messagebox.showinfo(
-            #     "Success",
-            #     "Face Capture Completed!"
-            # )
-            
-            # ----------------------------
-            # Capture Faces
-            # ----------------------------
 
             capture_faces(
                 student_id,
                 student_name
             )
 
-            messagebox.showinfo(
-                "Info",
-                "Face Capture Completed!\n\n"
-                "Training Model..."
+            train_face_model()
+
+        run_in_background(
+            task,
+            success_message=(
+                "Student registered, face captured, "
+                "and model trained."
             )
-
-            # ----------------------------
-            # Auto Train Model
-            # ----------------------------
-
-            subprocess.run([
-                "py",
-                "-3.11",
-                "train_model.py"
-            ])
-
-            messagebox.showinfo(
-                "Success",
-                (
-                    "Student Registered Successfully!\n\n"
-                    "Face Captured\n"
-                    "Model Trained\n"
-                    "System Ready"
-                )
-            )
-            
-            
-            register_window.destroy()
-
-        except Exception as e:
-
-            messagebox.showerror(
-                "Error",
-                str(e)
-            )
+        )
 
     register_btn = tk.Button(
         register_window,
@@ -176,60 +223,26 @@ def open_register_window():
     )
 
 
-# ----------------------------
-# Train Model
-# ----------------------------
-
 def train_model():
+    run_in_background(
+        train_face_model,
+        success_message="Model Training Completed!"
+    )
 
-    try:
-
-        subprocess.run([
-            "py",
-            "-3.11",
-            "train_model.py"
-        ])
-
-        messagebox.showinfo(
-            "Success",
-            "Model Training Completed!"
-        )
-
-    except Exception as e:
-
-        messagebox.showerror(
-            "Error",
-            str(e)
-        )
-
-
-# ----------------------------
-# Start Attendance
-# ----------------------------
 
 def start_attendance():
-
-    try:
-
-        subprocess.run([
-            "py",
-            "-3.11",
-            "mark_attendance.py"
-        ])
-
-    except Exception as e:
-
-        messagebox.showerror(
-            "Error",
-            str(e)
-        )
+    run_in_background(
+        recognize_faces,
+        success_message="Attendance window closed."
+    )
 
 
-# ----------------------------
-# View Attendance
-# ----------------------------
+def ensure_attendance_table():
+    init_attendance_database()
+
 
 def view_attendance():
+    ensure_attendance_table()
 
     window = tk.Toplevel(
         root
@@ -240,7 +253,7 @@ def view_attendance():
     )
 
     window.geometry(
-        "700x400"
+        "760x420"
     )
 
     columns = (
@@ -256,8 +269,14 @@ def view_attendance():
         show="headings"
     )
 
-    for col in columns:
+    column_widths = {
+        "ID": 80,
+        "Student Name": 260,
+        "Date": 180,
+        "Time": 160
+    }
 
+    for col in columns:
         table.heading(
             col,
             text=col
@@ -265,56 +284,50 @@ def view_attendance():
 
         table.column(
             col,
-            width=150
+            width=column_widths[col],
+            anchor="center"
         )
 
     table.pack(
         fill="both",
-        expand=True
+        expand=True,
+        padx=12,
+        pady=12
     )
 
-    # ----------------------------
-    # Fetch Attendance
-    # ----------------------------
-
     connection = sqlite3.connect(
-        "database/attendance.db"
+        DATABASE_FILE
     )
 
     cursor = connection.cursor()
 
     cursor.execute("""
-        SELECT *
+        SELECT id, student_name, date, time
         FROM attendance
+        ORDER BY id DESC
     """)
 
-    records = (
-        cursor.fetchall()
-    )
+    records = cursor.fetchall()
+
+    connection.close()
 
     for row in records:
-
         table.insert(
             "",
             tk.END,
             values=row
         )
 
-    connection.close()
+    if not records:
+        messagebox.showinfo(
+            "Attendance Records",
+            "No attendance records found."
+        )
 
-
-# ----------------------------
-# Exit System
-# ----------------------------
 
 def exit_system():
-
     root.destroy()
 
-
-# ----------------------------
-# Main Window
-# ----------------------------
 
 root = tk.Tk()
 
@@ -323,7 +336,7 @@ root.title(
 )
 
 root.geometry(
-    "500x550"
+    "500x590"
 )
 
 root.resizable(
@@ -331,10 +344,6 @@ root.resizable(
     False
 )
 
-
-# ----------------------------
-# Title
-# ----------------------------
 
 title_label = tk.Label(
     root,
@@ -353,10 +362,6 @@ title_label.pack(
     pady=20
 )
 
-
-# ----------------------------
-# Buttons
-# ----------------------------
 
 btn_width = 25
 btn_height = 2
@@ -427,8 +432,19 @@ exit_btn.pack(
 )
 
 
-# ----------------------------
-# Run App
-# ----------------------------
+status_var = tk.StringVar(
+    value="Ready"
+)
+
+status_label = tk.Label(
+    root,
+    textvariable=status_var,
+    font=("Arial", 10)
+)
+
+status_label.pack(
+    pady=5
+)
+
 
 root.mainloop()
