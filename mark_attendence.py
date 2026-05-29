@@ -3,10 +3,11 @@ import os
 import csv
 import pickle
 import face_recognition
+import numpy as np
 from datetime import datetime
 
 
-# Base Path
+
 BASE_DIR = os.path.dirname(
     os.path.abspath(__file__)
 )
@@ -28,6 +29,7 @@ ATTENDANCE_FILE = os.path.join(
 )
 
 
+
 def mark_attendance(
     student_name
 ):
@@ -46,12 +48,9 @@ def mark_attendance(
 
     already_marked = False
 
-    # Create file if not exists
     file_exists = os.path.exists(
         ATTENDANCE_FILE
     )
-
-    rows = []
 
     if file_exists:
 
@@ -60,19 +59,21 @@ def mark_attendance(
             "r"
         ) as file:
 
-            reader = csv.reader(file)
+            reader = csv.reader(
+                file
+            )
 
-            rows = list(reader)
-
-            for row in rows:
+            for row in reader:
 
                 if len(row) < 2:
                     continue
 
                 if (
-                    row[0] == student_name
+                    row[0]
+                    == student_name
                     and
-                    row[1] == today_date
+                    row[1]
+                    == today_date
                 ):
                     already_marked = True
                     break
@@ -89,7 +90,6 @@ def mark_attendance(
                 file
             )
 
-            # Header
             if (
                 not file_exists
                 or
@@ -110,9 +110,10 @@ def mark_attendance(
             ])
 
         print(
-            f"Attendance Marked: "
+            f" Attendance Marked: "
             f"{student_name}"
         )
+
 
 
 def recognize_faces():
@@ -145,7 +146,7 @@ def recognize_faces():
     camera = cv2.VideoCapture(0)
 
     print(
-        "\nCamera Started..."
+        "\n📷 Camera Started"
     )
 
     while True:
@@ -157,9 +158,20 @@ def recognize_faces():
         if not success:
             break
 
-        rgb_frame = cv2.cvtColor(
-            frame,
-            cv2.COLOR_BGR2RGB
+        small_frame = (
+            cv2.resize(
+                frame,
+                (0, 0),
+                fx=0.25,
+                fy=0.25
+            )
+        )
+
+        rgb_frame = (
+            cv2.cvtColor(
+                small_frame,
+                cv2.COLOR_BGR2RGB
+            )
         )
 
         face_locations = (
@@ -189,11 +201,16 @@ def recognize_faces():
                 face_recognition
                 .compare_faces(
                     known_faces,
-                    face_encoding
+                    face_encoding,
+                    tolerance=0.5
                 )
             )
 
-            name = "Unknown"
+            name = (
+                "Unknown Person"
+            )
+
+            confidence = 0
 
             face_distances = (
                 face_recognition
@@ -202,52 +219,104 @@ def recognize_faces():
                     face_encoding
                 )
             )
-
             if len(
                 face_distances
             ) > 0:
 
-                best_match = (
+                best_match = np.argmin(
                     face_distances
-                    .argmin()
                 )
+
                 if matches[
                     best_match
                 ]:
-                    name = (
+
+                    full_name = (
                         known_names[
                             best_match
                         ]
+                    )
+
+                    # Remove ID
+                    name = (
+                        full_name
+                        .split("_")[1]
+                    )
+
+                    confidence = (
+                        round(
+                            (
+                                1
+                                -
+                                face_distances[
+                                    best_match
+                                ]
+                            )
+                            * 100,
+                            2
+                        )
                     )
 
                     mark_attendance(
                         name
                     )
 
+            # Resize face box
             top, right, bottom, left = (
                 face_location
+            )
+
+            top *= 4
+            right *= 4
+            bottom *= 4
+            left *= 4
+
+            # Box Color
+            color = (
+                (0, 255, 0)
+                if name !=
+                "Unknown Person"
+                else
+                (0, 0, 255)
             )
 
             cv2.rectangle(
                 frame,
                 (left, top),
                 (right, bottom),
-                (0, 255, 0),
+                color,
                 2
             )
 
+            label = (
+                f"{name}"
+            )
+
+            if (
+                name
+                !=
+                "Unknown Person"
+            ):
+                label += (
+                    f" "
+                    f"({confidence}%)"
+                )
+
             cv2.putText(
                 frame,
-                name,
-                (left, top - 10),
+                label,
+                (
+                    left,
+                    top - 10
+                ),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (0, 255, 0),
+                0.7,
+                color,
                 2
             )
 
         cv2.imshow(
-            "Smart Attendance",
+            "Smart Attendance System",
             frame
         )
 
@@ -264,4 +333,3 @@ def recognize_faces():
 
 if __name__ == "__main__":
     recognize_faces()
-    

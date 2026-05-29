@@ -1,174 +1,144 @@
 import cv2
 import os
+import csv
+import pickle
+import face_recognition
+import numpy as np
+from datetime import datetime
+
 
 
 BASE_DIR = os.path.dirname(
     os.path.abspath(__file__)
 )
 
-DATASET_PATH = os.path.join(
+MODEL_PATH = os.path.join(
     BASE_DIR,
-    "dataset",
-    "student_images"
+    "models",
+    "face_model.pkl"
 )
 
-CAMERA_INDEX = 0
-MAX_IMAGES = 50
-MAX_FRAMES_WITHOUT_FACE = 600
-WINDOW_NAME = "Face Capture"
+ATTENDANCE_FILE = os.path.join(
+    BASE_DIR,
+    "attendance",
+    "attendance.csv"
+)
 
 
-def open_camera():
-    camera_backends = []
 
-    if os.name == "nt":
-        camera_backends.extend([
-            cv2.CAP_DSHOW,
-            cv2.CAP_MSMF
-        ])
-
-    camera_backends.append(None)
-
-    for backend in camera_backends:
-        if backend is None:
-            camera = cv2.VideoCapture(
-                CAMERA_INDEX
-            )
-        else:
-            camera = cv2.VideoCapture(
-                CAMERA_INDEX,
-                backend
-            )
-
-        if camera.isOpened():
-            return camera
-
-        camera.release()
-
-    return None
-
-
-def get_student_folder(
-    student_id,
+def mark_attendance(
     student_name
 ):
-    os.makedirs(
-        DATASET_PATH,
-        exist_ok=True
+
+    today_date = datetime.now().strftime(
+        "%Y-%m-%d"
     )
 
-    folder_name = (
-        f"{student_id}_{student_name}"
+    current_time = datetime.now().strftime(
+        "%H:%M:%S"
     )
 
-    student_folder = os.path.join(
-        DATASET_PATH,
-        folder_name
+    already_marked = False
+
+    file_exists = os.path.exists(
+        ATTENDANCE_FILE
     )
 
-    folder_name_lower = (
-        folder_name.lower()
-    )
+    if file_exists:
 
-    for existing_folder in os.listdir(
-        DATASET_PATH
-    ):
-        existing_path = os.path.join(
-            DATASET_PATH,
-            existing_folder
-        )
+        with open(
+            ATTENDANCE_FILE,
+            "r"
+        ) as file:
 
-        if (
-            os.path.isdir(existing_path)
-            and existing_folder.lower()
-            == folder_name_lower
-        ):
-            if existing_folder != folder_name:
-                print(
-                    f"Using existing folder: "
-                    f"{existing_folder}"
-                )
-
-            return (
-                existing_path,
-                existing_folder
+            reader = csv.reader(
+                file
             )
 
-    os.makedirs(
-        student_folder,
-        exist_ok=True
-    )
+            for row in reader:
+
+                if len(row) < 2:
+                    continue
+
+                if (
+                    row[0]
+                    == student_name
+                    and
+                    row[1]
+                    == today_date
+                ):
+                    already_marked = True
+                    break
+
+    if not already_marked:
+
+        with open(
+            ATTENDANCE_FILE,
+            "a",
+            newline=""
+        ) as file:
+
+            writer = csv.writer(
+                file
+            )
+
+            if (
+                not file_exists
+                or
+                os.path.getsize(
+                    ATTENDANCE_FILE
+                ) == 0
+            ):
+                writer.writerow([
+                    "student_name",
+                    "date",
+                    "time"
+                ])
+
+            writer.writerow([
+                student_name,
+                today_date,
+                current_time
+            ])
+
+        print(
+            f" Attendance Marked: "
+            f"{student_name}"
+        )
+
+
+
+def recognize_faces():
 
     print(
-        f"Student folder created: "
-        f"{student_folder}"
+        "\nLoading Model..."
     )
 
-    return (
-        student_folder,
-        folder_name
+    with open(
+        MODEL_PATH,
+        "rb"
+    ) as file:
+
+        model_data = pickle.load(
+            file
+        )
+
+    known_faces = (
+        model_data[
+            "encodings"
+        ]
     )
 
-
-def capture_faces():
-
-    student_id = input(
-        "Enter Student ID: "
-    ).strip()
-
-    student_name = input(
-        "Enter Student Name: "
-    ).strip()
-
-    if (
-        not student_id
-        or not student_name
-    ):
-        print(
-            "ID and Name cannot be empty!"
-        )
-        return
-
-    student_folder, folder_name = (
-        get_student_folder(
-            student_id,
-            student_name
-        )
+    known_names = (
+        model_data[
+            "names"
+        ]
     )
 
-    face_detector = cv2.CascadeClassifier(
-        cv2.data.haarcascades
-        + "haarcascade_frontalface_default.xml"
-    )
-
-    if face_detector.empty():
-        print(
-            "Face detector not loaded"
-        )
-        return
-
-    camera = open_camera()
-
-    if camera is None:
-        print(
-            "Camera not available"
-        )
-        return
-
-    image_count = 0
-    frames_without_face = 0
+    camera = cv2.VideoCapture(0)
 
     print(
-        "\n Capturing face images..."
-    )
-    print(
-        "Keep your face visible. "
-        "Press q in the camera window to stop."
-    )
-
-    cv2.namedWindow(
-        WINDOW_NAME,
-        cv2.WINDOW_NORMAL
+        "\n📷 Camera Started"
     )
 
     while True:
@@ -178,106 +148,180 @@ def capture_faces():
         )
 
         if not success:
-            print(
-                " Camera error"
-            )
             break
 
-        gray = cv2.cvtColor(
-            frame,
-            cv2.COLOR_BGR2GRAY
-        )
-
-        faces = (
-            face_detector.detectMultiScale(
-                gray,
-                scaleFactor=1.3,
-                minNeighbors=5
+        small_frame = (
+            cv2.resize(
+                frame,
+                (0, 0),
+                fx=0.25,
+                fy=0.25
             )
         )
 
-        if len(faces) == 0:
-            frames_without_face += 1
-        else:
-            frames_without_face = 0
+        rgb_frame = (
+            cv2.cvtColor(
+                small_frame,
+                cv2.COLOR_BGR2RGB
+            )
+        )
+
+        face_locations = (
+            face_recognition
+            .face_locations(
+                rgb_frame
+            )
+        )
+
+        face_encodings = (
+            face_recognition
+            .face_encodings(
+                rgb_frame,
+                face_locations
+            )
+        )
 
         for (
-            x,
-            y,
-            w,
-            h
-        ) in faces:
+            face_encoding,
+            face_location
+        ) in zip(
+            face_encodings,
+            face_locations
+        ):
 
-            cv2.rectangle(
-                frame,
-                (x, y),
-                (x + w, y + h),
-                (255, 0, 0),
-                2
-            )
-
-            face_crop = frame[
-                y:y+h,
-                x:x+w
-            ]
-
-            image_count += 1
-
-            image_path = (
-                os.path.join(
-                    student_folder,
-                    f"{folder_name}_"
-                    f"{image_count}.jpg"
+            matches = (
+                face_recognition
+                .compare_faces(
+                    known_faces,
+                    face_encoding,
+                    tolerance=0.5
                 )
             )
 
-            cv2.imwrite(
-                image_path,
-                face_crop
+            name = (
+                "Unknown Person"
             )
 
-        cv2.putText(
-            frame,
-            f"Saved: {image_count}/{MAX_IMAGES}",
-            (20, 35),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.8,
-            (0, 255, 0),
-            2
-        )
+            confidence = 0
+
+            face_distances = (
+                face_recognition
+                .face_distance(
+                    known_faces,
+                    face_encoding
+                )
+            )
+            if len(
+                face_distances
+            ) > 0:
+
+                best_match = np.argmin(
+                    face_distances
+                )
+
+                if matches[
+                    best_match
+                ]:
+
+                    full_name = (
+                        known_names[
+                            best_match
+                        ]
+                    )
+
+                    # Remove ID
+                    name = (
+                        full_name
+                        .split("_")[1]
+                    )
+
+                    confidence = (
+                        round(
+                            (
+                                1
+                                -
+                                face_distances[
+                                    best_match
+                                ]
+                            )
+                            * 100,
+                            2
+                        )
+                    )
+
+                    mark_attendance(
+                        name
+                    )
+
+            # Resize face box
+            top, right, bottom, left = (
+                face_location
+            )
+
+            top *= 4
+            right *= 4
+            bottom *= 4
+            left *= 4
+
+            # Box Color
+            color = (
+                (0, 255, 0)
+                if name !=
+                "Unknown Person"
+                else
+                (0, 0, 255)
+            )
+
+            cv2.rectangle(
+                frame,
+                (left, top),
+                (right, bottom),
+                color,
+                2
+            )
+
+            label = (
+                f"{name}"
+            )
+
+            if (
+                name
+                !=
+                "Unknown Person"
+            ):
+                label += (
+                    f" "
+                    f"({confidence}%)"
+                )
+
+            cv2.putText(
+                frame,
+                label,
+                (
+                    left,
+                    top - 10
+                ),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                color,
+                2
+            )
 
         cv2.imshow(
-            WINDOW_NAME,
+            "Smart Attendance System",
             frame
         )
 
-        if image_count >= MAX_IMAGES:
-            break
-
-        if frames_without_face >= MAX_FRAMES_WITHOUT_FACE:
-            print(
-                "No face detected. "
-                "Please check lighting and camera position."
-            )
-            break
-
-        
         if (
             cv2.waitKey(1)
             & 0xFF
-            == ord('q')
+            == ord("q")
         ):
             break
 
     camera.release()
     cv2.destroyAllWindows()
 
-    print(
-        f"\n "
-        f"{image_count} "
-        f"face images captured!"
-    )
-
 
 if __name__ == "__main__":
-    capture_faces()
+    recognize_faces()
