@@ -1,167 +1,246 @@
-import os
-import sqlite3
-import subprocess
-import sys
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
+import sqlite3
+import subprocess
 
-
-BASE_DIR = os.path.dirname(
-    os.path.abspath(__file__)
+from register_student import (
+    register_student
 )
 
-DATABASE_FILE = os.path.join(
-    BASE_DIR,
-    "database",
-    "attendance.db"
-)
-
-VENV_PYTHON = os.path.join(
-    BASE_DIR,
-    ".venv",
-    "Scripts",
-    "python.exe"
-)
-
-PYTHON_EXE = (
-    VENV_PYTHON
-    if os.path.exists(VENV_PYTHON)
-    else sys.executable
+from capture_faces import (
+    capture_faces
 )
 
 
-def run_script(
-    script_name,
-    wait=False,
-    success_message=None
-):
-    script_path = os.path.join(
-        BASE_DIR,
-        script_name
+# ----------------------------
+# Register Student Window
+# ----------------------------
+
+def open_register_window():
+
+    register_window = tk.Toplevel(
+        root
     )
 
-    if not os.path.exists(
-        script_path
-    ):
-        messagebox.showerror(
-            "Missing File",
-            f"Cannot find {script_name}"
+    register_window.title(
+        "Register Student"
+    )
+
+    register_window.geometry(
+        "400x250"
+    )
+
+    register_window.resizable(
+        False,
+        False
+    )
+
+    title_label = tk.Label(
+        register_window,
+        text="Register Student",
+        font=(
+            "Arial",
+            16,
+            "bold"
         )
-        return
+    )
 
-    command = [
-        PYTHON_EXE,
-        script_path
-    ]
+    title_label.pack(
+        pady=15
+    )
 
-    creation_flags = 0
+    tk.Label(
+        register_window,
+        text="Student Name",
+        font=("Arial", 12)
+    ).pack(
+        pady=5
+    )
 
-    if os.name == "nt":
-        creation_flags = (
-            subprocess.CREATE_NEW_CONSOLE
+    student_name_entry = tk.Entry(
+        register_window,
+        width=30,
+        font=("Arial", 12)
+    )
+
+    student_name_entry.pack(
+        pady=5
+    )
+
+    # ----------------------------
+    # Save Student
+    # ----------------------------
+
+    def save_student():
+
+        student_name = (
+            student_name_entry
+            .get()
+            .strip()
         )
 
-    try:
-        if wait:
-            result = subprocess.run(
-                command,
-                cwd=BASE_DIR,
-                creationflags=creation_flags
+        if not student_name:
+
+            messagebox.showerror(
+                "Error",
+                "Student name is required!"
             )
 
-            if result.returncode != 0:
-                messagebox.showerror(
-                    "Script Error",
-                    (
-                        f"{script_name} exited with "
-                        f"code {result.returncode}"
-                    )
-                )
-                return
+            return
 
-            if success_message:
-                messagebox.showinfo(
-                    "Success",
-                    success_message
+        try:
+
+            student_id, _ = (
+                register_student(
+                    student_name
                 )
-        else:
-            subprocess.Popen(
-                command,
-                cwd=BASE_DIR,
-                creationflags=creation_flags
             )
 
-    except Exception as error:
-        messagebox.showerror(
-            "Script Error",
-            str(error)
-        )
+            messagebox.showinfo(
+                "Info",
+                (
+                    f"Student Registered\n\n"
+                    f"ID: {student_id}\n"
+                    f"Name: {student_name}\n\n"
+                    f"Starting face capture..."
+                )
+            )
 
+            # # Auto Face Capture
+            # capture_faces(
+            #     student_id,
+            #     student_name
+            # )
 
-def ensure_attendance_table():
-    os.makedirs(
-        os.path.dirname(DATABASE_FILE),
-        exist_ok=True
+            # messagebox.showinfo(
+            #     "Success",
+            #     "Face Capture Completed!"
+            # )
+            
+            # ----------------------------
+            # Capture Faces
+            # ----------------------------
+
+            capture_faces(
+                student_id,
+                student_name
+            )
+
+            messagebox.showinfo(
+                "Info",
+                "Face Capture Completed!\n\n"
+                "Training Model..."
+            )
+
+            # ----------------------------
+            # Auto Train Model
+            # ----------------------------
+
+            subprocess.run([
+                "py",
+                "-3.11",
+                "train_model.py"
+            ])
+
+            messagebox.showinfo(
+                "Success",
+                (
+                    "Student Registered Successfully!\n\n"
+                    "Face Captured\n"
+                    "Model Trained\n"
+                    "System Ready"
+                )
+            )
+            
+            
+            register_window.destroy()
+
+        except Exception as e:
+
+            messagebox.showerror(
+                "Error",
+                str(e)
+            )
+
+    register_btn = tk.Button(
+        register_window,
+        text="Register & Capture Face",
+        command=save_student,
+        width=25,
+        height=2
     )
 
-    connection = sqlite3.connect(
-        DATABASE_FILE
-    )
-
-    cursor = connection.cursor()
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS attendance (
-            id INTEGER PRIMARY KEY,
-            student_name TEXT NOT NULL,
-            date TEXT NOT NULL,
-            time TEXT NOT NULL,
-            UNIQUE(student_name, date)
-        )
-    """)
-
-    connection.commit()
-    connection.close()
-
-
-def register_student():
-    run_script(
-        "register_student.py"
+    register_btn.pack(
+        pady=20
     )
 
 
-def capture_faces():
-    run_script(
-        "capture_faces.py"
-    )
-
+# ----------------------------
+# Train Model
+# ----------------------------
 
 def train_model():
-    run_script(
-        "train_model.py",
-        wait=True,
-        success_message="Model Training Completed!"
-    )
 
+    try:
+
+        subprocess.run([
+            "py",
+            "-3.11",
+            "train_model.py"
+        ])
+
+        messagebox.showinfo(
+            "Success",
+            "Model Training Completed!"
+        )
+
+    except Exception as e:
+
+        messagebox.showerror(
+            "Error",
+            str(e)
+        )
+
+
+# ----------------------------
+# Start Attendance
+# ----------------------------
 
 def start_attendance():
-    run_script(
-        "mark_attendence.py"
-    )
 
+    try:
+
+        subprocess.run([
+            "py",
+            "-3.11",
+            "mark_attendance.py"
+        ])
+
+    except Exception as e:
+
+        messagebox.showerror(
+            "Error",
+            str(e)
+        )
+
+
+# ----------------------------
+# View Attendance
+# ----------------------------
 
 def view_attendance():
-    ensure_attendance_table()
 
-    window = tk.Toplevel(root)
+    window = tk.Toplevel(
+        root
+    )
 
     window.title(
         "Attendance Records"
     )
 
     window.geometry(
-        "760x420"
+        "700x400"
     )
 
     columns = (
@@ -177,14 +256,8 @@ def view_attendance():
         show="headings"
     )
 
-    column_widths = {
-        "ID": 80,
-        "Student Name": 260,
-        "Date": 180,
-        "Time": 160
-    }
-
     for col in columns:
+
         table.heading(
             col,
             text=col
@@ -192,59 +265,65 @@ def view_attendance():
 
         table.column(
             col,
-            width=column_widths[col],
-            anchor="center"
+            width=150
         )
 
     table.pack(
         fill="both",
-        expand=True,
-        padx=12,
-        pady=12
+        expand=True
     )
 
+    # ----------------------------
+    # Fetch Attendance
+    # ----------------------------
+
     connection = sqlite3.connect(
-        DATABASE_FILE
+        "database/attendance.db"
     )
 
     cursor = connection.cursor()
 
     cursor.execute("""
-        SELECT id, student_name, date, time
+        SELECT *
         FROM attendance
-        ORDER BY id DESC
     """)
 
-    records = cursor.fetchall()
-
-    connection.close()
+    records = (
+        cursor.fetchall()
+    )
 
     for row in records:
+
         table.insert(
             "",
             tk.END,
             values=row
         )
 
-    if not records:
-        messagebox.showinfo(
-            "Attendance Records",
-            "No attendance records found."
-        )
+    connection.close()
 
+
+# ----------------------------
+# Exit System
+# ----------------------------
 
 def exit_system():
+
     root.destroy()
 
+
+# ----------------------------
+# Main Window
+# ----------------------------
 
 root = tk.Tk()
 
 root.title(
-    "AI Smart Attendance System"
+    "Smart Attendance System"
 )
 
 root.geometry(
-    "500x580"
+    "500x550"
 )
 
 root.resizable(
@@ -253,10 +332,14 @@ root.resizable(
 )
 
 
+# ----------------------------
+# Title
+# ----------------------------
+
 title_label = tk.Label(
     root,
     text=(
-        "AI Smart Attendance\n"
+        "Smart Attendance\n"
         "System"
     ),
     font=(
@@ -271,6 +354,10 @@ title_label.pack(
 )
 
 
+# ----------------------------
+# Buttons
+# ----------------------------
+
 btn_width = 25
 btn_height = 2
 
@@ -280,23 +367,10 @@ register_btn = tk.Button(
     text="Register Student",
     width=btn_width,
     height=btn_height,
-    command=register_student
+    command=open_register_window
 )
 
 register_btn.pack(
-    pady=10
-)
-
-
-capture_btn = tk.Button(
-    root,
-    text="Capture Faces",
-    width=btn_width,
-    height=btn_height,
-    command=capture_faces
-)
-
-capture_btn.pack(
     pady=10
 )
 
@@ -352,5 +426,9 @@ exit_btn.pack(
     pady=20
 )
 
+
+# ----------------------------
+# Run App
+# ----------------------------
 
 root.mainloop()

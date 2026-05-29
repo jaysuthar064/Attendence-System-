@@ -1,7 +1,11 @@
 import os
 import csv
+import sqlite3
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+BASE_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
 
 DATASET_PATH = os.path.join(
     BASE_DIR,
@@ -15,37 +19,35 @@ CSV_FILE = os.path.join(
     "students.csv"
 )
 
+DB_PATH = os.path.join(
+    BASE_DIR,
+    "database",
+    "attendance.db"
+)
 
-def register_student():
-    print("\n===== Student Registration System =====")
 
-    student_id = input(
-        "Enter Student ID: "
-    ).strip()
-
-    student_name = input(
-        "Enter Student Name: "
-    ).strip()
-
-    if not student_id or not student_name:
-        print(
-            "ID and Name cannot be empty!"
-        )
-        return
+def register_student(
+    student_id,
+    student_name
+):
 
     folder_name = (
         f"{student_id}_{student_name}"
     )
 
-    student_folder_path = os.path.join(
-        DATASET_PATH,
-        folder_name
+    student_folder_path = (
+        os.path.join(
+            DATASET_PATH,
+            folder_name
+        )
     )
 
     os.makedirs(
         student_folder_path,
         exist_ok=True
     )
+
+   
 
     file_exists = os.path.exists(
         CSV_FILE
@@ -57,9 +59,10 @@ def register_student():
         newline=""
     ) as file:
 
-        writer = csv.writer(file)
+        writer = csv.writer(
+            file
+        )
 
-        
         if (
             not file_exists
             or
@@ -77,15 +80,27 @@ def register_student():
             student_name
         ])
 
-    print(
-        "\n Student Registered Successfully!"
+  
+
+    connection = sqlite3.connect(
+        DB_PATH
     )
 
-    print(
-        f" Folder Created:\n"
-        f"{student_folder_path}"
-    )
+    cursor = connection.cursor()
 
+    cursor.execute("""
+        INSERT INTO students
+        (
+            student_id,
+            student_name
+        )
+        VALUES (?, ?)
+    """, (
+        student_id,
+        student_name
+    ))
 
-if __name__ == "__main__":
-    register_student()
+    connection.commit()
+    connection.close()
+
+    return student_folder_path
