@@ -2,6 +2,7 @@ import cv2
 import os
 import csv
 import pickle
+import sqlite3
 import face_recognition
 import numpy as np
 from datetime import datetime
@@ -28,18 +29,123 @@ ATTENDANCE_FILE = os.path.join(
     "attendence.csv"
 )
 
+DATABASE_DIR = os.path.join(
+    BASE_DIR,
+    "database"
+)
+
+DATABASE_FILE = os.path.join(
+    DATABASE_DIR,
+    "attendance.db"
+)
+
+
+def init_attendance_database():
+    os.makedirs(
+        DATABASE_DIR,
+        exist_ok=True
+    )
+
+    conn = sqlite3.connect(
+        DATABASE_FILE
+    )
+
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS attendance (
+            id INTEGER PRIMARY KEY,
+            student_name TEXT NOT NULL,
+            date TEXT NOT NULL,
+            time TEXT NOT NULL,
+            UNIQUE(student_name, date)
+        )
+    """)
+
+    if os.path.exists(
+        ATTENDANCE_FILE
+    ):
+        with open(
+            ATTENDANCE_FILE,
+            "r"
+        ) as file:
+            reader = csv.reader(
+                file
+            )
+
+            for row in reader:
+                if (
+                    len(row) < 3
+                    or row[0] == "student_name"
+                ):
+                    continue
+
+                cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO attendance (
+                        student_name,
+                        date,
+                        time
+                    )
+                    VALUES (?, ?, ?)
+                    """,
+                    (
+                        row[0],
+                        row[1],
+                        row[2]
+                    )
+                )
+
+    conn.commit()
+    conn.close()
+
+
+def save_attendance_to_database(
+    student_name,
+    today_date,
+    current_time
+):
+    init_attendance_database()
+
+    conn = sqlite3.connect(
+        DATABASE_FILE
+    )
+
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO attendance (
+            student_name,
+            date,
+            time
+        )
+        VALUES (?, ?, ?)
+        """,
+        (
+            student_name,
+            today_date,
+            current_time
+        )
+    )
+
+    inserted = (
+        cursor.rowcount > 0
+    )
+
+    conn.commit()
+    conn.close()
+
+    return inserted
+
 
 
 def mark_attendance(
     student_name
 ):
-    os.makedirs(
-        ATTENDANCE_DIR,
-        exist_ok=True
-    )
 
     today_date = datetime.now().strftime(
-        "%Y-%m-%d"
+        "%d-%m-%Y"
     )
 
     current_time = datetime.now().strftime(
@@ -48,35 +154,62 @@ def mark_attendance(
 
     already_marked = False
 
+  
+
+    connection = sqlite3.connect(
+        os.path.join(
+            BASE_DIR,
+            "database",
+            "attendance.db"
+        )
+    )
+
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        SELECT *
+        FROM attendance
+        WHERE student_name = ?
+        AND date = ?
+    """, (
+        student_name,
+        today_date
+    ))
+
+    existing_record = (
+        cursor.fetchone()
+    )
+
+    if existing_record:
+        already_marked = True
+
+    
+
+    if not already_marked:
+
+        cursor.execute("""
+            INSERT INTO attendance
+            (
+                student_name,
+                date,
+                time
+            )
+            VALUES (?, ?, ?)
+        """, (
+            student_name,
+            today_date,
+            current_time
+        ))
+
+        connection.commit()
+
+    connection.close()
+
+    
+
     file_exists = os.path.exists(
         ATTENDANCE_FILE
     )
-
-    if file_exists:
-
-        with open(
-            ATTENDANCE_FILE,
-            "r"
-        ) as file:
-
-            reader = csv.reader(
-                file
-            )
-
-            for row in reader:
-
-                if len(row) < 2:
-                    continue
-
-                if (
-                    row[0]
-                    == student_name
-                    and
-                    row[1]
-                    == today_date
-                ):
-                    already_marked = True
-                    break
 
     if not already_marked:
 
@@ -110,7 +243,7 @@ def mark_attendance(
             ])
 
         print(
-            f" Attendance Marked: "
+            f" Attendance Marked: " 
             f"{student_name}"
         )
 
@@ -121,6 +254,8 @@ def recognize_faces():
     print(
         "\nLoading Model..."
     )
+
+    init_attendance_database()
 
     with open(
         MODEL_PATH,
@@ -146,7 +281,7 @@ def recognize_faces():
     camera = cv2.VideoCapture(0)
 
     print(
-        "\n📷 Camera Started"
+        "\nCamera Started"
     )
 
     while True:
@@ -237,10 +372,9 @@ def recognize_faces():
                         ]
                     )
 
-                    # Remove ID
                     name = (
                         full_name
-                        .split("_")[1]
+                        .split("_", 1)[1]
                     )
 
                     confidence = (
@@ -258,7 +392,7 @@ def recognize_faces():
                     )
 
                     mark_attendance(
-                        name
+                        full_name
                     )
 
             # Resize face box
